@@ -20,5 +20,7 @@ Usage of quicktls:
 
 Generate client certificate and server certificate for example.com
 ```
-$ quicktls -client=1 example.com
+$ quicktls -clients=1 example.com
+$ ls
+ca.pem  client-0.cert  client-0.key  example.com.cert  example.com.key
 ```
