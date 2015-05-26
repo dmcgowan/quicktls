@@ -24,3 +24,51 @@ $ quicktls -clients=1 example.com
 $ ls
 ca.pem  client-0.cert  client-0.key  example.com.cert  example.com.key
 ```
+
+## Use Cases
+
+### Docker Private Registry
+This utility can be used to easily create TLS certificates for a Docker
+registry, including for TLS client authentication. The client certificates
+and server certificate do not need to use the same CA, but it is faster to
+set up for basic use cases with only a few clients or when sharing a private
+key might be considered appropriate.
+
+#### Generate the certificates (with only 1 client)
+```
+$ quicktls -clients 1 registry.example.com
+$ ls
+ca.pem  client-0.cert  client-0.key  registry.example.com.cert  registry.example.com.key
+```
+
+#### Install on machine running Docker daemon
+```
+$ sudo cp ca.pem /etc/docker/certs.d/registry.example.com/ca.crt
+$ sudo cp client-0.cert /etc/docker/certs.d/registry.example.com/client.cert
+$ sudo cp client-0.key /etc/docker/certs.d/registry.example.com/client.key
+```
+
+#### Setup private registry
+
+*with nginx*
+
+Copy files to nginx machine
+```
+$ cp registry.example.com.cert cert-registry.example.com.pem
+$ cp registry.example.com.key key-registry.example.com.pem
+$ cp ca.pem client-registry.example.com.pem
+```
+
+Update `server` section of nginx config
+```
+server {
+  listen 443;
+  server_name registry.example.com;
+  ssl on;
+  ssl_certificate /etc/nginx/ssl/cert-registry.example.com.pem;
+  ssl_certificate_key /etc/nginx/ssl/key-registry.example.com.pem;
+  ssl_client_certificate /etc/nginx/ssl/client-registry.example.com.pem;
+  ssl_verify_client on;
+  ...
+}
+```
