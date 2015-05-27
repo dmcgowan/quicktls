@@ -25,6 +25,7 @@ var (
 	org       string
 	duration  time.Duration
 	rsaBits   int
+	ec        string
 )
 
 // Usage: quicktls host1 host2 host3
@@ -35,7 +36,8 @@ func main() {
 	flag.StringVar(&directory, "o", "", "Output directory")
 	flag.StringVar(&org, "org", "QuickTLS", "Organization in the certificate")
 	flag.DurationVar(&duration, "exp", 1080*24*time.Hour, "Time until Certificate expiration")
-	flag.IntVar(&rsaBits, "rsa", 4096, "Number of RSA bits")
+	flag.IntVar(&rsaBits, "rsa", 2048, "Number of RSA bits")
+	flag.StringVar(&ec, "ec", "", "Which elliptic curve key to use 224, 384, 521 (default to use RSA)")
 	flag.Parse()
 
 	hosts := flag.Args()
@@ -86,6 +88,26 @@ func newCertificate() *x509.Certificate {
 	}
 }
 
+// newPrivateKey creates a new private key depending
+// on the input flags
+func newPrivateKey() (crypto.PrivateKey, error) {
+	if ec != "" {
+		var curve elliptic.Curve
+		switch ec {
+		case "224":
+			curve = elliptic.P224()
+		case "384":
+			curve = elliptic.P384()
+		case "521":
+			curve = elliptic.P521()
+		default:
+			return nil, fmt.Errorf("Unknown elliptic curve: %q", ec)
+		}
+		return ecdsa.GenerateKey(curve, rand.Reader)
+	}
+	return rsa.GenerateKey(rand.Reader, rsaBits)
+}
+
 // generateCA creates a new CA certificate, saves the certificate
 // and returns the x509 certificate and crypto private key. This
 // private key should never be saved to disk, but rather used to
@@ -96,12 +118,12 @@ func generateCA(caFile string) (*x509.Certificate, crypto.PrivateKey, error) {
 	template.KeyUsage |= x509.KeyUsageCertSign
 	template.Subject.CommonName = org
 
-	priv, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	priv, err := newPrivateKey()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, &priv.PublicKey, priv)
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, priv.(crypto.Signer).Public(), priv)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,7 +161,7 @@ func generateCert(hosts []string, certFile, keyFile string, ca *x509.Certificate
 		}
 	}
 
-	priv, err := rsa.GenerateKey(rand.Reader, rsaBits)
+	priv, err := newPrivateKey()
 	if err != nil {
 		return err
 	}
@@ -153,7 +175,7 @@ func generateClient(certFile, keyFile string, ca *x509.Certificate, caKey crypto
 	template := newCertificate()
 	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
 
-	priv, err := rsa.GenerateKey(rand.Reader, rsaBits)
+	priv, err := newPrivateKey()
 	if err != nil {
 		return err
 	}
@@ -163,8 +185,8 @@ func generateClient(certFile, keyFile string, ca *x509.Certificate, caKey crypto
 
 // generateFromTemplate generates a certificate from the given template and signed by
 // the given parent, storing the results in a certificate and key file.
-func generateFromTemplate(certFile, keyFile string, template, parent *x509.Certificate, key *rsa.PrivateKey, parentKey crypto.PrivateKey) error {
-	derBytes, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, parentKey)
+func generateFromTemplate(certFile, keyFile string, template, parent *x509.Certificate, key crypto.PrivateKey, parentKey crypto.PrivateKey) error {
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, parent, key.(crypto.Signer).Public(), parentKey)
 	if err != nil {
 		return err
 	}
@@ -180,10 +202,21 @@ func generateFromTemplate(certFile, keyFile string, template, parent *x509.Certi
 	if err != nil {
 		return err
 	}
+	defer keyOut.Close()
 
-	keyBytes := x509.MarshalPKCS1PrivateKey(key)
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: keyBytes})
-	keyOut.Close()
+	switch v := key.(type) {
+	case *rsa.PrivateKey:
+		keyBytes := x509.MarshalPKCS1PrivateKey(v)
+		pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: keyBytes})
+	case *ecdsa.PrivateKey:
+		keyBytes, err := x509.MarshalECPrivateKey(v)
+		if err != nil {
+			return err
+		}
+		pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	default:
+		return fmt.Errorf("Unsupport private key type: %#v", key)
+	}
 
 	return nil
 }
