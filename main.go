@@ -26,11 +26,12 @@ var (
 	duration  time.Duration
 	rsaBits   int
 	ec        string
+	keepCAKey bool
 )
 
 // Usage: quicktls host1 host2 host3
 // Output: ca.pem host1.cert host1.key host2.cert host2.key host3.cert host3.key
-// NOTE: CA key is NEVER saved to disk, this ensures safety of the ca
+// NOTE: CA key by default is not saved to disk, this ensures integrity of the ca
 func main() {
 	flag.IntVar(&clientN, "clients", 0, "Number of client certificates to generate")
 	flag.StringVar(&directory, "o", "", "Output directory")
@@ -38,6 +39,7 @@ func main() {
 	flag.DurationVar(&duration, "exp", 1080*24*time.Hour, "Time until Certificate expiration")
 	flag.IntVar(&rsaBits, "rsa", 2048, "Number of RSA bits")
 	flag.StringVar(&ec, "ec", "", "Which elliptic curve key to use 224, 384, 521 (default to use RSA)")
+	flag.BoolVar(&keepCAKey, "keep-ca-key", false, "Keep CA key to generate further certificates")
 	flag.Parse()
 
 	hosts := flag.Args()
@@ -46,6 +48,13 @@ func main() {
 	ca, caKey, err := generateCA(caFile)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if keepCAKey {
+		caKeyFile := filepath.Join(directory, "ca.key")
+		if err := savePrivateKey(caKey, caKeyFile); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	for _, host := range hosts {
@@ -198,6 +207,11 @@ func generateFromTemplate(certFile, keyFile string, template, parent *x509.Certi
 	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	certOut.Close()
 
+	return savePrivateKey(key, keyFile)
+}
+
+// savePrivateKey saves the private key to a PEM file
+func savePrivateKey(key crypto.PrivateKey, keyFile string) error {
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
