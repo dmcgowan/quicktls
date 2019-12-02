@@ -38,7 +38,7 @@ func main() {
 	flag.StringVar(&org, "org", "QuickTLS", "Organization in the certificate")
 	flag.DurationVar(&duration, "exp", 1080*24*time.Hour, "Time until Certificate expiration")
 	flag.IntVar(&rsaBits, "rsa", 2048, "Number of RSA bits")
-	flag.StringVar(&ec, "ec", "", "Which elliptic curve key to use 224, 384, 521 (default to use RSA)")
+	flag.StringVar(&ec, "ec", "", "Which elliptic curve key to use 224, 256, 384, 521 (default to use RSA)")
 	flag.BoolVar(&keepCAKey, "keep-ca-key", false, "Keep CA key to generate further certificates")
 	flag.Parse()
 
@@ -105,6 +105,8 @@ func newPrivateKey() (crypto.PrivateKey, error) {
 		switch ec {
 		case "224":
 			curve = elliptic.P224()
+		case "256":
+			curve = elliptic.P256()
 		case "384":
 			curve = elliptic.P384()
 		case "521":
