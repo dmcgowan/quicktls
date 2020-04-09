@@ -27,6 +27,7 @@ var (
 	rsaBits   int
 	ec        string
 	keepCAKey bool
+	withSAN   bool
 )
 
 // Usage: quicktls host1 host2 host3
@@ -40,6 +41,7 @@ func main() {
 	flag.IntVar(&rsaBits, "rsa", 2048, "Number of RSA bits")
 	flag.StringVar(&ec, "ec", "", "Which elliptic curve key to use 224, 256, 384, 521 (default to use RSA)")
 	flag.BoolVar(&keepCAKey, "keep-ca-key", false, "Keep CA key to generate further certificates")
+	flag.BoolVar(&withSAN, "with-san", false, "Generate certificate with Subject Alternative Name (SAN) instead of separate certificates")
 	flag.Parse()
 
 	hosts := flag.Args()
@@ -57,11 +59,20 @@ func main() {
 		}
 	}
 
-	for _, host := range hosts {
-		hostCert := filepath.Join(directory, fmt.Sprintf("%s.cert", host))
-		hostKey := filepath.Join(directory, fmt.Sprintf("%s.key", host))
-		if err := generateCert([]string{host}, hostCert, hostKey, ca, caKey); err != nil {
+	if withSAN {
+		hostCert := filepath.Join(directory, fmt.Sprintf("%s.cert", hosts[0]))
+		hostKey := filepath.Join(directory, fmt.Sprintf("%s.key", hosts[0]))
+
+		if err := generateCert(hosts, hostCert, hostKey, ca, caKey); err != nil {
 			log.Fatal(err)
+		}
+	} else {
+		for _, host := range hosts {
+			hostCert := filepath.Join(directory, fmt.Sprintf("%s.cert", host))
+			hostKey := filepath.Join(directory, fmt.Sprintf("%s.key", host))
+			if err := generateCert([]string{host}, hostCert, hostKey, ca, caKey); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 	for i := 0; i < clientN; i++ {
